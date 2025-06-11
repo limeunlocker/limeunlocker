@@ -1,5 +1,6 @@
 
 [app]
+android.sdk = 30.0.3
 
 # (str) Title of your application
 title = Lime Offline Unlocker
