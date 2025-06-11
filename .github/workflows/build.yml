@@ -44,8 +44,8 @@ jobs:
           "platform-tools" "platforms;android-31" "build-tools;31.0.0" "ndk;23.1.7779620"
 
     - name: Build APK
-      run: |
-        buildozer android debug
+      working-directory: ${{ github.workspace }}
+      run: buildozer android debug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
