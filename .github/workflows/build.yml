@@ -65,11 +65,10 @@ jobs:
         
         # Move extracted tools to the 'latest' subdirectory for proper sdkmanager functionality
         mkdir -p cmdline-tools/latest
-        # The unzip likely creates a 'cmdline-tools' directory. We want its contents moved.
-        mv cmdline-tools/* cmdline-tools/latest/ || true # Use '|| true' to prevent script from failing if mv finds no matches
+        mv cmdline-tools/* cmdline-tools/latest/ || true
         
         # Add primary SDK tools to PATH for the current shell session and future steps
-        echo "Adding Android SDK command-line tools to PATH..."
+        echo "Adding Android SDK command-line tools to PATH for current session..."
         export PATH=$PATH:$SDK_ROOT_PATH/cmdline-tools/latest/bin
         export PATH=$PATH:$SDK_ROOT_PATH/platform-tools
         
@@ -84,61 +83,67 @@ jobs:
           "platforms;android-31" \
           "build-tools;31.0.0"
         
+        # VERIFICATION: List contents of the build-tools directory to confirm AIDL is present
+        echo "Contents of build-tools/31.0.0 directory:"
+        ls -F $SDK_ROOT_PATH/build-tools/31.0.0/
+        
         # IMPORTANT: Persist environment variables for subsequent steps using GITHUB_ENV and GITHUB_PATH
         echo "Persisting Android SDK environment variables for subsequent steps..."
         echo "ANDROID_SDK_ROOT=$SDK_ROOT_PATH" >> $GITHUB_ENV
         echo "ANDROID_HOME=$SDK_ROOT_PATH" >> $GITHUB_ENV # Buildozer often uses ANDROID_HOME
         echo "$SDK_ROOT_PATH/cmdline-tools/latest/bin" >> $GITHUB_PATH
         echo "$SDK_ROOT_PATH/platform-tools" >> $GITHUB_PATH
-        echo "$SDK_ROOT_PATH/build-tools/31.0.0" >> $GITHUB_PATH
+        echo "$SDK_ROOT_PATH/build-tools/31.0.0" >> $GITHUB_PATH # Ensure build-tools path is available
 
     - name: Setup buildozer
       run: |
         echo "Setting up Buildozer environment..."
-        # Create buildozer directory and link Android SDK
         mkdir -p ~/.buildozer/android
-        # Buildozer looks for the platform directory, linking ANDROID_HOME is common.
         ln -sf $ANDROID_HOME ~/.buildozer/android/platform
-        
-        # Initialize buildozer config file if it doesn't exist
-        # This will create a buildozer.spec if not present in the repository
         buildozer init || echo "Buildozer already initialized or buildozer.spec exists."
 
-    - name: Fix AIDL Path
+    - name: Verify AIDL Path Availability
       run: |
-        echo "Checking and fixing AIDL path..."
-        # AIDL is typically found in build-tools.
-        # Buildozer often handles this, but this step acts as a safeguard.
-        # Ensure the path corresponds to the installed build tools version.
-        AIDL_BUILD_TOOLS_PATH="$ANDROID_HOME/build-tools/31.0.0"
-        AIDL_PATH="$AIDL_BUILD_TOOLS_PATH/aidl"
+        echo "Verifying AIDL executable is in PATH..."
+        BUILD_TOOLS_31_PATH="$ANDROID_HOME/build-tools/31.0.0"
         
-        if [ -f "$AIDL_PATH" ]; then
-          echo "AIDL found at $AIDL_PATH. Adding build tools to PATH."
-          echo "$AIDL_BUILD_TOOLS_PATH" >> $GITHUB_PATH
+        if [ -d "$BUILD_TOOLS_31_PATH" ]; then
+          echo "Build-tools 31.0.0 directory found: $BUILD_TOOLS_31_PATH"
         else
-          echo "AIDL not found for build-tools 31.0.0. Attempting to install build-tools 30.0.3 as a fallback."
-          # If 31.0.0 AIDL is not found, try installing 30.0.3, which is sometimes a common alternative for Kivy
+          echo "WARNING: Build-tools 31.0.0 directory not found at $BUILD_TOOLS_31_PATH."
+          echo "Attempting to install build-tools 30.0.3 as a fallback if not already present."
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;30.0.3"
+          # Ensure this fallback path is also added to GITHUB_PATH for the current session
           echo "$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_PATH
+        fi
+        
+        # Test if 'aidl' command is discoverable in the current PATH
+        if command -v aidl &> /dev/null
+        then
+            echo "SUCCESS: AIDL executable found in PATH."
+        else
+            echo "ERROR: AIDL executable NOT found in PATH. Buildozer may still fail."
+            # Consider exiting with an error here if this is a critical failure point: exit 1
         fi
 
     - name: Build APK
       run: |
         echo "Starting APK build with Buildozer..."
-        # These environment variables are already persisted from previous steps via GITHUB_ENV and GITHUB_PATH
-        # Setting them again here is redundant but harmless. Removed for clarity.
         
-        export PYTHONUNBUFFERED=1 # Important for unbuffered output during build
+        # Ensure build-tools path is explicitly in PATH for this step's shell
+        # This is the most direct way to ensure AIDL is found for buildozer.
+        export PATH="$ANDROID_HOME/build-tools/31.0.0:$PATH"
+        # If using fallback, ensure that path is also included.
+        # This is slightly redundant if previous GITHUB_PATH worked, but adds robustness.
+        export PATH="$ANDROID_HOME/build-tools/30.0.3:$PATH"
         
-        # Define debug keystore paths and passwords
-        # Ensure this keystore is safe for your use case; this is for debug builds.
+        export PYTHONUNBUFFERED=1
+        
         export P4A_RELEASE_KEYSTORE=$HOME/debug.keystore
         export P4A_RELEASE_KEYALIAS=androiddebugkey
         export P4A_RELEASE_KEYSTORE_PASSWD=android
         export P4A_RELEASE_KEYALIAS_PASSWD=android
         
-        # Generate debug keystore if it doesn't exist
         if [ ! -f "$P4A_RELEASE_KEYSTORE" ]; then
           echo "Generating debug keystore..."
           keytool -genkey -v -keystore $P4A_RELEASE_KEYSTORE -alias androiddebugkey \
@@ -150,7 +155,6 @@ jobs:
           echo "Debug keystore already exists at $P4A_RELEASE_KEYSTORE"
         fi
         
-        # Build with verbose output for detailed logs
         buildozer android debug --verbose
 
     - name: Upload APK
