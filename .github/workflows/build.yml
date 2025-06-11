@@ -1,4 +1,4 @@
-name: Build Kivy APK
+name: Build APK
 
 on:
   push:
@@ -9,44 +9,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: Set up system dependencies
+    - name: Install core dependencies
       run: |
-        sudo apt-get update -y
-        sudo apt-get install -y \
-          zip unzip git \
-          openjdk-17-jdk \
-          python3-pip \
-          python3.10-venv \
-          libffi-dev \
-          libssl-dev \
-          libz-dev \
-          libjpeg-dev \
-          libsdl2-dev \
-          libsdl2-image-dev \
-          libsdl2-mixer-dev \
-          libsdl2-ttf-dev \
-          libportmidi-dev \
-          libswscale-dev \
-          libavformat-dev \
-          libavcodec-dev \
-          libfreetype6-dev \
-          pkg-config \
-          libsqlite3-dev \
-          libncurses5-dev \
-          libgstreamer1.0-dev \
-          libgstreamer-plugins-base1.0-dev
-
-    - name: Install Python dependencies
-      run: |
-        python3 -m pip install --upgrade pip setuptools wheel
+        sudo apt-get update
+        sudo apt-get install -y openjdk-17-jdk python3-pip zip unzip
+        python3 -m pip install --upgrade pip
         pip install cython buildozer
 
-    - name: Initialize Buildozer
+    - name: Build APK
       run: |
-        buildozer android clean
         buildozer android debug
 
     - name: Upload APK
