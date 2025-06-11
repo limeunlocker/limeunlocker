@@ -13,10 +13,31 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
-        sudo apt update
-        sudo apt install -y zip unzip openjdk-17-jdk python3-pip python3.10-venv
+        sudo apt-get update
+        sudo apt-get install -y \
+          zip unzip \
+          openjdk-17-jdk \
+          python3-pip \
+          python3.10-venv \
+          libffi-dev \
+          libssl-dev \
+          libz-dev \
+          libjpeg-dev \
+          libsdl2-dev \
+          libsdl2-image-dev \
+          libsdl2-mixer-dev \
+          libsdl2-ttf-dev \
+          libportmidi-dev \
+          libswscale-dev \
+          libavformat-dev \
+          libavcodec-dev \
+          libfreetype6-dev \
+          pkg-config
+
+    - name: Install Python dependencies
+      run: |
         python3 -m pip install --upgrade pip
         pip install cython buildozer
 
