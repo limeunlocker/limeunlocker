@@ -29,53 +29,81 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git zip unzip python3-pip build-essential libffi-dev libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev liblzma-dev python3-openssl autoconf libtool pkg-config cmake ninja-build ccache ant gradle
+        sudo apt-get install -y \
+          git zip unzip python3-pip \
+          build-essential libffi-dev libssl-dev \
+          zlib1g-dev libbz2-dev libreadline-dev \
+          libsqlite3-dev wget curl llvm \
+          libncurses5-dev libncursesw5-dev \
+          xz-utils tk-dev liblzma-dev \
+          python3-openssl autoconf libtool \
+          pkg-config cmake ninja-build \
+          ccache ant gradle
 
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip wheel setuptools
-        pip install buildozer==1.5.0 cython==0.29.33 colorama appdirs sh jinja2 six
+        pip install buildozer==1.5.0 cython==0.29.33
+        pip install colorama appdirs sh jinja2 six
 
-    - name: Setup Android SDK
-      env:
-        ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+    - name: Setup Android SDK and Build-tools 30.0.3
       run: |
-        mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-        cd $ANDROID_SDK_ROOT/cmdline-tools
-
+        export SDK_ROOT=$HOME/android-sdk
+        mkdir -p $SDK_ROOT/cmdline-tools
+        cd $SDK_ROOT
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        unzip -q commandlinetools-linux-9477386_latest.zip
-        mkdir -p latest
-        mv cmdline-tools/* latest/ || true
-        rm -rf cmdline-tools
+        unzip -q commandlinetools-linux-9477386_latest.zip -d cmdline-tools
+        mkdir -p cmdline-tools/latest
+        mv cmdline-tools/cmdline-tools/* cmdline-tools/latest/
+        export PATH=$SDK_ROOT/cmdline-tools/latest/bin:$PATH
+        yes | sdkmanager --licenses
+        sdkmanager --verbose "platform-tools" "platforms;android-31" "build-tools;30.0.3"
+        echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
+        echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
+        echo "$SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        echo "$SDK_ROOT/platform-tools" >> $GITHUB_PATH
+        echo "$SDK_ROOT/build-tools/30.0.3" >> $GITHUB_PATH
 
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
-
-        yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses
-
-        sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-31" "build-tools;30.0.3"
-
-    - name: Verify AIDL and Build Tools
-      env:
-        ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+    - name: Debug: list SDK build-tools directory
       run: |
-        ls $ANDROID_SDK_ROOT/build-tools/30.0.3/
-        export PATH=$PATH:$ANDROID_SDK_ROOT/build-tools/30.0.3
-        if command -v aidl >/dev/null 2>&1; then
-          echo "AIDL found!"
+        ls -l $HOME/android-sdk/build-tools/30.0.3 || echo "Build-tools 30.0.3 missing!"
+
+    - name: Debug: verify aidl executable presence
+      run: |
+        if command -v aidl &> /dev/null; then
+          echo "SUCCESS: aidl found at $(which aidl)"
+          aidl --help || echo "aidl help command failed!"
         else
-          echo "ERROR: AIDL not found."
+          echo "ERROR: aidl NOT found in PATH!"
           exit 1
         fi
 
+    - name: Setup Buildozer environment
+      run: |
+        mkdir -p ~/.buildozer/android
+        ln -sf $ANDROID_HOME ~/.buildozer/android/platform
+        buildozer init || echo "Buildozer already initialized or buildozer.spec exists."
+
     - name: Build APK
       env:
-        ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
-        PATH: ${{ github.workspace }}/android-sdk/build-tools/30.0.3:${PATH}
+        ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        PATH: ${{ env.PATH }}:${{ env.ANDROID_HOME }}/build-tools/30.0.3
       run: |
-        buildozer android debug --verbose
+        export PYTHONUNBUFFERED=1
+        export P4A_RELEASE_KEYSTORE=$HOME/debug.keystore
+        export P4A_RELEASE_KEYALIAS=androiddebugkey
+        export P4A_RELEASE_KEYSTORE_PASSWD=android
+        export P4A_RELEASE_KEYALIAS_PASSWD=android
+        if [ ! -f "$P4A_RELEASE_KEYSTORE" ]; then
+          keytool -genkey -v -keystore $P4A_RELEASE_KEYSTORE -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -storepass android -keypass android
+        fi
+        buildozer android debug --verbose || (echo "Build failed, showing buildozer logs:" && tail -n 50 .buildozer/android/platform/build-arm64-v8a/dists/*/*.log && exit 1)
 
-    - name: Upload APK artifact
+    - name: Upload APK on success
       uses: actions/upload-artifact@v4
       if: success()
       with:
