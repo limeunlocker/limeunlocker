@@ -8,10 +8,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-      PATH: ${{ env.PATH }}:~/.buildozer/android/platform/cmdline-tools/latest/bin
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -39,13 +35,16 @@ jobs:
         unzip -q commandlinetools-linux-9477386_latest.zip
         mkdir -p cmdline-tools/latest
         mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
-        yes | ~/.buildozer/android/platform/cmdline-tools/latest/bin/sdkmanager --licenses
-        ~/.buildozer/android/platform/cmdline-tools/latest/bin/sdkmanager \
-          "platform-tools" "platforms;android-31" "build-tools;31.0.0" "ndk;23.1.7779620"
+        export PATH=$PATH:~/.buildozer/android/platform/cmdline-tools/latest/bin
+        yes | sdkmanager --licenses
+        sdkmanager "platform-tools" "platforms;android-31" "build-tools;31.0.0" "ndk;23.1.7779620"
 
     - name: Build APK
       working-directory: ${{ github.workspace }}
-      run: buildozer android debug
+      run: |
+        export PATH=$PATH:~/.buildozer/android/platform/cmdline-tools/latest/bin
+        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+        buildozer android debug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
